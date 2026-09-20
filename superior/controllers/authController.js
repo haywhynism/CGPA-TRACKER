@@ -1,6 +1,7 @@
-// const mongoose = require("mongoose");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
 
 
 const Student = require("../models/Student");
@@ -223,7 +224,102 @@ const activateStudentAccount = async (req, res) => {
     }
 };
 
+// Login user
+const login = async (req, res) => {
+  try {
+    const { matricNumber, password } = req.body;
+
+    // Validate input
+    if (!matricNumber || !password) {
+      return res.status(400).json({
+        message: "Please provide matric number and password",
+      });
+    }
+
+    // Find user
+    const user = await User.findOne({
+      matricNumber: matricNumber.toUpperCase().trim(),
+    });
+
+    // Use a generic message so we don't reveal whether an account exists
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid matric number or password",
+      });
+    }
+
+    // Check account status
+    if (!user.isActive) {
+      return res.status(403).json({
+        message: "Your account is inactive",
+      });
+    }
+
+    // Compare password
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      user.password
+    );
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        message: "Invalid matric number or password",
+      });
+    }
+
+    // Create JWT
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        role: user.role,
+        matricNumber: user.matricNumber,
+      },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: process.env.JWT_EXPIRES_IN || "1d",
+      }
+    );
+
+    return res.status(200).json({
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        matricNumber: user.matricNumber,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+      },
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+
+    return res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
+
+// Get currently logged-in user
+const getMe = async (req, res) => {
+  try {
+    res.status(200).json({
+      message: "Authentication successful",
+      user: req.user,
+    });
+  } catch (error) {
+    console.error("Get current user error:", error);
+
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
+
 module.exports = {
     requestActivation,
     activateStudentAccount,
+    login,
+    getMe,
 };
