@@ -1,3 +1,4 @@
+const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -6,6 +7,7 @@ const jwt = require("jsonwebtoken");
 
 const Student = require("../models/Student");
 const User = require("../models/User")
+const Lecturer = require("../models/Lecturer");
 const { sendActivationEmail } = require("../config/email");
 
 // Request account activation
@@ -13,7 +15,6 @@ const requestActivation = async (req, res) => {
     try {
         const { matricNumber, email } = req.body;
 
-        // Generic response for security
         const genericMessage =
             "If the information matches an eligible student record, an activation code has been sent to the registered email.";
 
@@ -226,117 +227,399 @@ const activateStudentAccount = async (req, res) => {
 
 // Login user
 const login = async (req, res) => {
-  try {
-    const { matricNumber, password } = req.body;
+    try {
+        const {
+            matricNumber,
+            staffId,
+            email,
+            password,
+        } = req.body;
 
-    // Validate input
-    if (!matricNumber || !password) {
-      return res.status(400).json({
-        message: "Please provide matric number and password",
-      });
+        if (!password) {
+            return res.status(400).json({
+                message: "Please provide password",
+            });
+        }
+
+        if (matricNumber) {
+            const normalizedMatricNumber =
+                matricNumber.toUpperCase().trim();
+
+            const user = await User.findOne({
+                matricNumber: normalizedMatricNumber,
+                role: "student",
+            });
+
+            if (!user) {
+                return res.status(401).json({
+                    message: "Invalid login credentials",
+                });
+            }
+
+            const isPasswordValid = await bcrypt.compare(
+                password,
+                user.password
+            );
+
+            if (!isPasswordValid) {
+                return res.status(401).json({
+                    message: "Invalid login credentials",
+                });
+            }
+
+            if (!user.isActive) {
+                return res.status(403).json({
+                    message: "Your account is inactive",
+                });
+            }
+
+            const token = jwt.sign(
+                {
+                    userId: user._id,
+                    role: user.role,
+                    matricNumber: user.matricNumber,
+                },
+                process.env.JWT_SECRET,
+                {
+                    expiresIn: "24h",
+                }
+            );
+
+            return res.status(200).json({
+                message: "Login successful",
+                token,
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    matricNumber: user.matricNumber,
+                    email: user.email,
+                    role: user.role,
+                    department: user.department,
+                },
+            });
+        }
+
+        if (staffId) {
+            const normalizedStaffId =
+                staffId.toUpperCase().trim();
+
+            const user = await User.findOne({
+                staffId: normalizedStaffId,
+                role: {
+                    $in: ["lecturer", "hod"],
+                },
+            });
+
+            if (!user) {
+                return res.status(401).json({
+                    message: "Invalid login credentials",
+                });
+            }
+
+            const isPasswordValid = await bcrypt.compare(
+                password,
+                user.password
+            );
+
+            if (!isPasswordValid) {
+                return res.status(401).json({
+                    message: "Invalid login credentials",
+                });
+            }
+
+            if (!user.isActive) {
+                return res.status(403).json({
+                    message: "Your account is inactive",
+                });
+            }
+
+            const token = jwt.sign(
+                {
+                    userId: user._id,
+                    role: user.role,
+                    staffId: user.staffId,
+                },
+                process.env.JWT_SECRET,
+                {
+                    expiresIn: "24h",
+                }
+            );
+
+            return res.status(200).json({
+                message: "Login successful",
+                token,
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    staffId: user.staffId,
+                    email: user.email,
+                    role: user.role,
+                    department: user.department,
+                },
+            });
+        }
+
+        if (email) {
+            const normalizedEmail =
+                email.toLowerCase().trim();
+
+            const user = await User.findOne({
+                email: normalizedEmail,
+                role: "admin",
+            });
+
+            if (!user) {
+                return res.status(401).json({
+                    message: "Invalid login credentials",
+                });
+            }
+
+            const isPasswordValid = await bcrypt.compare(
+                password,
+                user.password
+            );
+
+            if (!isPasswordValid) {
+                return res.status(401).json({
+                    message: "Invalid login credentials",
+                });
+            }
+
+            if (!user.isActive) {
+                return res.status(403).json({
+                    message: "Your account is inactive",
+                });
+            }
+
+            const token = jwt.sign(
+                {
+                    userId: user._id,
+                    role: user.role,
+                    email: user.email,
+                },
+                process.env.JWT_SECRET,
+                {
+                    expiresIn: "24h",
+                }
+            );
+
+            return res.status(200).json({
+                message: "Login successful",
+                token,
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                    department: user.department,
+                },
+            });
+        }
+
+        return res.status(400).json({
+            message:
+                "Please provide matric number, staff ID, or email with password",
+        });
+    } catch (error) {
+        console.error("Login error:", error);
+
+        return res.status(500).json({
+            message: "Server error",
+        });
     }
-
-    // Find user
-    const user = await User.findOne({
-      matricNumber: matricNumber.toUpperCase().trim(),
-    });
-
-    // Use a generic message so we don't reveal whether an account exists
-    if (!user) {
-      return res.status(401).json({
-        message: "Invalid matric number or password",
-      });
-    }
-
-    // Check account status
-    if (!user.isActive) {
-      return res.status(403).json({
-        message: "Your account is inactive",
-      });
-    }
-
-    // Compare password
-    const isPasswordValid = await bcrypt.compare(
-      password,
-      user.password
-    );
-
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        message: "Invalid matric number or password",
-      });
-    }
-
-    // Create JWT
-    const token = jwt.sign(
-      {
-        userId: user._id,
-        role: user.role,
-        matricNumber: user.matricNumber,
-      },
-      process.env.JWT_SECRET,
-      {
-        expiresIn: process.env.JWT_EXPIRES_IN || "1d",
-      }
-    );
-
-    return res.status(200).json({
-      message: "Login successful",
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        matricNumber: user.matricNumber,
-        email: user.email,
-        role: user.role,
-        department: user.department,
-      },
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-
-    return res.status(500).json({
-      message: "Server error",
-    });
-  }
 };
 
 // Get currently logged-in user
 const getMe = async (req, res) => {
-  try {
-    res.status(200).json({
-      message: "Authentication successful",
-      user: req.user,
-    });
-  } catch (error) {
-    console.error("Get current user error:", error);
+    try {
+        res.status(200).json({
+            message: "Authentication successful",
+            user: req.user,
+        });
+    } catch (error) {
+        console.error("Get current user error:", error);
 
-    res.status(500).json({
-      message: "Server error",
-    });
-  }
+        res.status(500).json({
+            message: "Server error",
+        });
+    }
 };
 
 // Create the first admin account
 const setupAdmin = async (req, res) => {
-  try {
-    // Check if an admin already exists
-    const existingAdmin = await User.findOne({
-      role: "admin",
-    });
+    try {
+        // Check if an admin already exists
+        const existingAdmin = await User.findOne({
+            role: "admin",
+        });
 
-    if (existingAdmin) {
-      return res.status(403).json({
-        message: "Admin account already exists",
-      });
+        if (existingAdmin) {
+            return res.status(403).json({
+                message: "Admin account already exists",
+            });
+        }
+
+        const { name, email, password } = req.body;
+
+        // Validate required fields
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                message: "Please provide name, email and password",
+            });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({
+                message: "Password must be at least 6 characters",
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Check whether email is already being used
+        const existingUser = await User.findOne({
+            email: normalizedEmail,
+        });
+
+        if (existingUser) {
+            return res.status(400).json({
+                message: "A user with this email already exists",
+            });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // Create admin
+        const admin = await User.create({
+            name: name.trim(),
+            email: normalizedEmail,
+            password: hashedPassword,
+            role: "admin",
+            department: null,
+            isActive: true,
+        });
+
+        return res.status(201).json({
+            message: "Admin account created successfully",
+            admin: {
+                id: admin._id,
+                name: admin.name,
+                email: admin.email,
+                role: admin.role,
+            },
+        });
+    } catch (error) {
+        console.error("Setup admin error:", error);
+
+        return res.status(500).json({
+            message: "Server error",
+            error: error.message,
+        });
     }
+};
 
-    const { name, email, password } = req.body;
+// Request lecturer account activation
+const requestLecturerActivation = async (req, res) => {
+    try {
+        const { staffId, email } = req.body;
 
-    // Validate required fields
-    if (!name || !email || !password) {
+        if (!staffId || !email) {
+            return res.status(400).json({
+                message: "Please provide staff ID and email",
+            });
+        }
+
+        const normalizedStaffId = staffId.toUpperCase().trim();
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Find lecturer using BOTH staff ID and registered email
+        const lecturer = await Lecturer.findOne({
+            staffId: normalizedStaffId,
+            email: normalizedEmail,
+        });
+
+        // Do not reveal whether the lecturer exists
+        if (!lecturer) {
+            return res.status(200).json({
+                message:
+                    "If the details are valid, an activation code has been sent to the registered email.",
+            });
+        }
+
+        // Don't allow activation if already activated
+        if (lecturer.accountActivated) {
+            return res.status(400).json({
+                message: "Lecturer account has already been activated",
+            });
+        }
+
+        // Generate activation code
+        const activationCode = crypto
+            .randomBytes(4)
+            .toString("hex")
+            .toUpperCase();
+
+        // Expire after 20 minutes
+        const activationCodeExpires = new Date(
+            Date.now() + 20 * 60 * 1000
+        );
+
+        lecturer.activationCode = activationCode;
+        lecturer.activationCodeExpires =
+            activationCodeExpires;
+
+        await lecturer.save();
+
+        // Send email
+        const transporter = nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASSWORD,
+            },
+        });
+
+        await transporter.sendMail({
+            from: `"CGPA Tracker" <${process.env.EMAIL_USER}>`,
+            to: lecturer.email,
+            subject: "Lecturer Account Activation",
+            text: `Hello ${lecturer.name},
+
+                Your lecturer account activation code is:
+
+                ${activationCode}
+
+                This code will expire in 20 minutes.
+
+                If you did not request this activation, please ignore this email.
+
+                CGPA Tracker`,
+        });
+
+        return res.status(200).json({
+            message:
+                "If the details are valid, an activation code has been sent to the registered email.",
+        });
+    } catch (error) {
+        console.error(
+            "Request lecturer activation error:",
+            error
+        );
+
+        return res.status(500).json({
+            message: "Server error",
+        });
+    }
+};
+
+const activateLecturerAccount = async (req, res) => {
+  try {
+    const { staffId, activationCode, password } = req.body;
+
+    if (!staffId || !activationCode || !password) {
       return res.status(400).json({
-        message: "Please provide name, email and password",
+        message: "Please provide staff ID, activation code and password",
       });
     }
 
@@ -346,47 +629,101 @@ const setupAdmin = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedStaffId = staffId.toUpperCase().trim();
+    const normalizedActivationCode =
+      activationCode.toUpperCase().trim();
 
-    // Check whether email is already being used
+    // Find lecturer
+    const lecturer = await Lecturer.findOne({
+      staffId: normalizedStaffId,
+    });
+
+    // Don't reveal whether the staff ID exists
+    if (!lecturer) {
+      return res.status(400).json({
+        message: "Invalid activation details",
+      });
+    }
+
+    // Check if already activated
+    if (lecturer.accountActivated) {
+      return res.status(400).json({
+        message: "Lecturer account has already been activated",
+      });
+    }
+
+    // Check activation code
+    if (
+      !lecturer.activationCode ||
+      lecturer.activationCode !== normalizedActivationCode
+    ) {
+      return res.status(400).json({
+        message: "Invalid activation details",
+      });
+    }
+
+    // Check expiration
+    if (
+      !lecturer.activationCodeExpires ||
+      lecturer.activationCodeExpires < new Date()
+    ) {
+      return res.status(400).json({
+        message: "Activation code has expired",
+      });
+    }
+
+    // Check whether a User already exists
     const existingUser = await User.findOne({
-      email: normalizedEmail,
+      $or: [
+        { staffId: normalizedStaffId },
+        { email: lecturer.email.toLowerCase().trim() },
+      ],
     });
 
     if (existingUser) {
       return res.status(400).json({
-        message: "A user with this email already exists",
+        message: "An account already exists for this lecturer",
       });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create admin
-    const admin = await User.create({
-      name: name.trim(),
-      email: normalizedEmail,
+    // Create User account
+    const user = await User.create({
+      name: lecturer.name,
+      staffId: normalizedStaffId,
+      email: lecturer.email.toLowerCase().trim(),
       password: hashedPassword,
-      role: "admin",
-      department: null,
+      role: "lecturer",
+      department: lecturer.department,
       isActive: true,
     });
 
-    return res.status(201).json({
-      message: "Admin account created successfully",
-      admin: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
+    // Activate lecturer record
+    lecturer.accountActivated = true;
+    lecturer.activationCode = null;
+    lecturer.activationCodeExpires = null;
+    lecturer.user = user._id;
+
+    await lecturer.save();
+
+    return res.status(200).json({
+      message: "Lecturer account activated successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        staffId: user.staffId,
+        email: user.email,
+        role: user.role,
+        department: user.department,
       },
     });
   } catch (error) {
-    console.error("Setup admin error:", error);
+    console.error("Activate lecturer account error:", error);
 
     return res.status(500).json({
       message: "Server error",
-      error: error.message,
     });
   }
 };
@@ -394,7 +731,10 @@ const setupAdmin = async (req, res) => {
 module.exports = {
     requestActivation,
     activateStudentAccount,
+    requestLecturerActivation,
+    activateLecturerAccount,
     login,
     getMe,
     setupAdmin,
+
 };

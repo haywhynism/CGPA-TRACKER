@@ -3,6 +3,8 @@ const express = require("express");
 const {
   requestActivation,
   activateStudentAccount,
+  requestLecturerActivation,
+  activateLecturerAccount,
   login,
   getMe,
    setupAdmin,
@@ -46,6 +48,16 @@ router.get(
       user: req.user,
     });
   }
+);
+
+router.post(
+  "/request-lecturer-activation",
+  requestLecturerActivation
+);
+
+router.post(
+  "/activate-lecturer",
+  activateLecturerAccount
 );
 
 module.exports = router;
