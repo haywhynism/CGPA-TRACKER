@@ -16,10 +16,21 @@ const userSchema = new mongoose.Schema(
             trim: true,
         },
 
+        staffId: {
+            type: String,
+            unique: true,
+            sparse: true,
+            uppercase: true,
+            trim: true,
+        },
+
         email: {
             type: String,
-            required: true,
+            required: function () {
+                return ["student", "lecturer", "hod"].includes(this.role);
+            },
             unique: true,
+            sparse: true,
             lowercase: true,
             trim: true,
         },
@@ -36,6 +47,8 @@ const userSchema = new mongoose.Schema(
             enum: ["admin", "hod", "lecturer", "student"],
             default: "student",
         },
+
+        
         student: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Student",

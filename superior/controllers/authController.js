@@ -317,9 +317,84 @@ const getMe = async (req, res) => {
   }
 };
 
+// Create the first admin account
+const setupAdmin = async (req, res) => {
+  try {
+    // Check if an admin already exists
+    const existingAdmin = await User.findOne({
+      role: "admin",
+    });
+
+    if (existingAdmin) {
+      return res.status(403).json({
+        message: "Admin account already exists",
+      });
+    }
+
+    const { name, email, password } = req.body;
+
+    // Validate required fields
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "Please provide name, email and password",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Check whether email is already being used
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        message: "A user with this email already exists",
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create admin
+    const admin = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      role: "admin",
+      department: null,
+      isActive: true,
+    });
+
+    return res.status(201).json({
+      message: "Admin account created successfully",
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+      },
+    });
+  } catch (error) {
+    console.error("Setup admin error:", error);
+
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
     requestActivation,
     activateStudentAccount,
     login,
     getMe,
+    setupAdmin,
 };

@@ -9,6 +9,9 @@ const institutionRoutes = require("./routes/institutionRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const authRoutes = require("./routes/authRoutes");
+const courseRoutes = require("./routes/courseRoutes");
+const courseAssignmentRoutes = require("./routes/courseAssignmentRoutes");
+const lecturerRoutes = require("./routes/lecturerRoutes");
 
 
 
@@ -24,9 +27,15 @@ app.use("/api/institutions", institutionRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/courses", courseRoutes);
+app.use(
+    "/api/course-assignments",
+    courseAssignmentRoutes
+);
+app.use("/api/lecturers", lecturerRoutes);
 
 
-app.get('/', (req, res)=>{
+app.get('/', (req, res) => {
     res.json({
         message: "CGPA TRACKER API IS RUNNING"
     })
@@ -36,7 +45,7 @@ app.get('/', (req, res)=>{
 const PORT = process.env.PORT || 9001;
 
 
-app.listen(PORT, ()=>{
-console.log(`server is running ${PORT}`);
+app.listen(PORT, () => {
+    console.log(`server is running ${PORT}`);
 
 })

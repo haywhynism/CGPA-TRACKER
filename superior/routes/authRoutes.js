@@ -5,6 +5,7 @@ const {
   activateStudentAccount,
   login,
   getMe,
+   setupAdmin,
 } = require("../controllers/authController");
 
 const {
@@ -19,6 +20,7 @@ router.post("/request-activation", requestActivation);
 router.post("/activate", activateStudentAccount);
 
 router.post("/login", login)
+router.post("/setup-admin", setupAdmin);
 
 router.get("/me", protect, getMe);
 
