@@ -4,6 +4,7 @@ const {
   createCourseAssignment,
   getCourseAssignments,
   getCourseAssignmentById,
+  getMyCourses,
 } = require("../controllers/courseAssignmentController");
 
 const {
@@ -29,6 +30,13 @@ router.get(
   getCourseAssignments
 );
 
+router.get(
+  "/my-courses",
+  protect,
+  authorize("lecturer", "hod"),
+  getMyCourses,
+);
+
 // Admin only
 router.get(
   "/:id",
@@ -36,5 +44,9 @@ router.get(
   authorize("admin"),
   getCourseAssignmentById
 );
+
+
+
+
 
 module.exports = router;

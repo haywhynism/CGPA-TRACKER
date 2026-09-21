@@ -3,6 +3,8 @@ const Course = require("../models/Course");
 const User = require("../models/User");
 const Department = require("../models/Department");
 const Institution = require("../models/Institution");
+const Lecturer = require("../models/Lecturer");
+
 
 // Create course assignment
 const createCourseAssignment = async (req, res) => {
@@ -36,8 +38,8 @@ const createCourseAssignment = async (req, res) => {
       });
     }
 
-    // Check lecturer
-    const lecturer = await User.findById(lecturerId);
+    // Check lecturer PROFILE
+    const lecturer = await Lecturer.findById(lecturerId);
 
     if (!lecturer) {
       return res.status(404).json({
@@ -45,28 +47,30 @@ const createCourseAssignment = async (req, res) => {
       });
     }
 
-    // Make sure user is actually a lecturer
-    if (lecturer.role !== "lecturer") {
-      return res.status(400).json({
-        message: "Selected user is not a lecturer",
-      });
-    }
-
-    // Check lecturer is active
+    // Lecturer must be active
     if (!lecturer.isActive) {
       return res.status(400).json({
         message: "Lecturer account is inactive",
       });
     }
 
-    // Check lecturer department
-    if (!lecturer.department) {
+    // Lecturer must have activated their account
+    if (!lecturer.accountActivated || !lecturer.user) {
       return res.status(400).json({
-        message: "Lecturer is not assigned to a department",
+        message:
+          "Lecturer account has not been activated",
       });
     }
 
-    // Lecturer must belong to the same department as the course
+    // Check lecturer department
+    if (!lecturer.department) {
+      return res.status(400).json({
+        message:
+          "Lecturer is not assigned to a department",
+      });
+    }
+
+    // Lecturer must belong to same department as course
     if (
       lecturer.department.toString() !==
       course.department.toString()
@@ -99,14 +103,18 @@ const createCourseAssignment = async (req, res) => {
       });
     }
 
-    // Make sure assignment matches the course
-    if (course.academicSession !== academicSession.trim()) {
+    // Make sure academic session matches course
+    if (
+      course.academicSession !==
+      academicSession.trim()
+    ) {
       return res.status(400).json({
         message:
           "Academic session does not match the course academic session",
       });
     }
 
+    // Make sure semester matches course
     if (course.semester !== semester) {
       return res.status(400).json({
         message:
@@ -131,25 +139,28 @@ const createCourseAssignment = async (req, res) => {
     }
 
     // Create assignment
-    const assignment = await CourseAssignment.create({
-      course: courseId,
-      lecturer: lecturerId,
-      institution: course.institution,
-      department: course.department,
-      academicSession: academicSession.trim(),
-      semester,
-    });
+    const assignment =
+      await CourseAssignment.create({
+        course: courseId,
+        lecturer: lecturerId,
+        institution: course.institution,
+        department: course.department,
+        academicSession: academicSession.trim(),
+        semester,
+      });
 
     // Return populated assignment
     const populatedAssignment =
-      await CourseAssignment.findById(assignment._id)
+      await CourseAssignment.findById(
+        assignment._id
+      )
         .populate(
           "course",
-          "code title creditUnit level semester academicSession"
+          "code title courseUnit level semester academicSession"
         )
         .populate(
           "lecturer",
-          "name email matricNumber role department"
+          "name email staffId department"
         )
         .populate(
           "department",
@@ -161,7 +172,8 @@ const createCourseAssignment = async (req, res) => {
         );
 
     return res.status(201).json({
-      message: "Course assigned to lecturer successfully",
+      message:
+        "Course assigned to lecturer successfully",
       assignment: populatedAssignment,
     });
   } catch (error) {
@@ -170,7 +182,6 @@ const createCourseAssignment = async (req, res) => {
       error
     );
 
-    // Handle duplicate index
     if (error.code === 11000) {
       return res.status(400).json({
         message:
@@ -186,6 +197,7 @@ const createCourseAssignment = async (req, res) => {
 };
 
 
+
 // Get all course assignments
 const getCourseAssignments = async (req, res) => {
   try {
@@ -193,11 +205,11 @@ const getCourseAssignments = async (req, res) => {
       await CourseAssignment.find()
         .populate(
           "course",
-          "code title creditUnit level semester academicSession"
+          "code title courseUnit level semester academicSession"
         )
         .populate(
           "lecturer",
-          "name email matricNumber role"
+          "name email staffId department"
         )
         .populate(
           "department",
@@ -234,11 +246,11 @@ const getCourseAssignmentById = async (req, res) => {
       await CourseAssignment.findById(req.params.id)
         .populate(
           "course",
-          "code title creditUnit level semester academicSession"
+          "code title courseUnit level semester academicSession"
         )
         .populate(
           "lecturer",
-          "name email matricNumber role"
+          "name email staffId department"
         )
         .populate(
           "department",
@@ -272,8 +284,55 @@ const getCourseAssignmentById = async (req, res) => {
 };
 
 
+
+const getMyCourses = async (req, res) => {
+  try {
+    // req.user is the logged-in User
+    const userId = req.user._id;
+
+    // Find the Lecturer profile connected to this User
+    const lecturer = await Lecturer.findOne({
+      user: userId,
+      isActive: true,
+    });
+
+    if (!lecturer) {
+      return res.status(404).json({
+        message: "Lecturer profile not found",
+      });
+    }
+
+    // Find courses assigned to this Lecturer
+    const assignments = await CourseAssignment.find({
+      lecturer: lecturer._id,
+      isActive: true,
+    })
+      .populate(
+        "course",
+        "code title courseUnit department institution level semester academicSession courseType"
+      )
+      .populate(
+        "lecturer",
+        "name staffId email"
+      );
+
+    return res.status(200).json({
+      count: assignments.length,
+      courses: assignments,
+    });
+  } catch (error) {
+    console.error("Get my courses error:", error);
+
+    return res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
+
+
 module.exports = {
   createCourseAssignment,
   getCourseAssignments,
   getCourseAssignmentById,
+  getMyCourses,
 };

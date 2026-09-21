@@ -614,118 +614,119 @@ const requestLecturerActivation = async (req, res) => {
 };
 
 const activateLecturerAccount = async (req, res) => {
-  try {
-    const { staffId, activationCode, password } = req.body;
+    try {
+        const { staffId, activationCode, password } = req.body;
 
-    if (!staffId || !activationCode || !password) {
-      return res.status(400).json({
-        message: "Please provide staff ID, activation code and password",
-      });
+        if (!staffId || !activationCode || !password) {
+            return res.status(400).json({
+                message: "Please provide staff ID, activation code and password",
+            });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({
+                message: "Password must be at least 6 characters",
+            });
+        }
+
+        const normalizedStaffId = staffId.toUpperCase().trim();
+        const normalizedActivationCode =
+            activationCode.toUpperCase().trim();
+
+        // Find lecturer
+        const lecturer = await Lecturer.findOne({
+            staffId: normalizedStaffId,
+        });
+
+        // Don't reveal whether the staff ID exists
+        if (!lecturer) {
+            return res.status(400).json({
+                message: "Invalid activation details",
+            });
+        }
+
+        // Check if already activated
+        if (lecturer.accountActivated) {
+            return res.status(400).json({
+                message: "Lecturer account has already been activated",
+            });
+        }
+
+        // Check activation code
+        if (
+            !lecturer.activationCode ||
+            lecturer.activationCode !== normalizedActivationCode
+        ) {
+            return res.status(400).json({
+                message: "Invalid activation details",
+            });
+        }
+
+        // Check expiration
+        if (
+            !lecturer.activationCodeExpires ||
+            lecturer.activationCodeExpires < new Date()
+        ) {
+            return res.status(400).json({
+                message: "Activation code has expired",
+            });
+        }
+
+        // Check whether a User already exists
+        const existingUser = await User.findOne({
+            $or: [
+                { staffId: normalizedStaffId },
+                { email: lecturer.email.toLowerCase().trim() },
+            ],
+        });
+
+        if (existingUser) {
+            return res.status(400).json({
+                message: "An account already exists for this lecturer",
+            });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // Create User account
+        const user = await User.create({
+            name: lecturer.name,
+            staffId: normalizedStaffId,
+            email: lecturer.email.toLowerCase().trim(),
+            password: hashedPassword,
+            role: lecturer.role,
+            department: lecturer.department,
+            isActive: true,
+        });
+
+        // Activate lecturer record
+        lecturer.accountActivated = true;
+        lecturer.activationCode = null;
+        lecturer.activationCodeExpires = null;
+        lecturer.user = user._id;
+
+        await lecturer.save();
+
+        return res.status(200).json({
+            message:
+                `${lecturer.role === "hod" ? "HOD" : "Lecturer"} account activated successfully`,
+            user: {
+                id: user._id,
+                name: user.name,
+                staffId: user.staffId,
+                email: user.email,
+                role: user.role,
+                department: user.department,
+            },
+        });
+    } catch (error) {
+        console.error("Activate lecturer account error:", error);
+
+        return res.status(500).json({
+            message: "Server error",
+        });
     }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        message: "Password must be at least 6 characters",
-      });
-    }
-
-    const normalizedStaffId = staffId.toUpperCase().trim();
-    const normalizedActivationCode =
-      activationCode.toUpperCase().trim();
-
-    // Find lecturer
-    const lecturer = await Lecturer.findOne({
-      staffId: normalizedStaffId,
-    });
-
-    // Don't reveal whether the staff ID exists
-    if (!lecturer) {
-      return res.status(400).json({
-        message: "Invalid activation details",
-      });
-    }
-
-    // Check if already activated
-    if (lecturer.accountActivated) {
-      return res.status(400).json({
-        message: "Lecturer account has already been activated",
-      });
-    }
-
-    // Check activation code
-    if (
-      !lecturer.activationCode ||
-      lecturer.activationCode !== normalizedActivationCode
-    ) {
-      return res.status(400).json({
-        message: "Invalid activation details",
-      });
-    }
-
-    // Check expiration
-    if (
-      !lecturer.activationCodeExpires ||
-      lecturer.activationCodeExpires < new Date()
-    ) {
-      return res.status(400).json({
-        message: "Activation code has expired",
-      });
-    }
-
-    // Check whether a User already exists
-    const existingUser = await User.findOne({
-      $or: [
-        { staffId: normalizedStaffId },
-        { email: lecturer.email.toLowerCase().trim() },
-      ],
-    });
-
-    if (existingUser) {
-      return res.status(400).json({
-        message: "An account already exists for this lecturer",
-      });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Create User account
-    const user = await User.create({
-      name: lecturer.name,
-      staffId: normalizedStaffId,
-      email: lecturer.email.toLowerCase().trim(),
-      password: hashedPassword,
-      role: "lecturer",
-      department: lecturer.department,
-      isActive: true,
-    });
-
-    // Activate lecturer record
-    lecturer.accountActivated = true;
-    lecturer.activationCode = null;
-    lecturer.activationCodeExpires = null;
-    lecturer.user = user._id;
-
-    await lecturer.save();
-
-    return res.status(200).json({
-      message: "Lecturer account activated successfully",
-      user: {
-        id: user._id,
-        name: user.name,
-        staffId: user.staffId,
-        email: user.email,
-        role: user.role,
-        department: user.department,
-      },
-    });
-  } catch (error) {
-    console.error("Activate lecturer account error:", error);
-
-    return res.status(500).json({
-      message: "Server error",
-    });
-  }
 };
 
 module.exports = {

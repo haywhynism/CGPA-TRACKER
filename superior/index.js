@@ -13,6 +13,7 @@ const authRoutes = require("./routes/authRoutes");
 const courseRoutes = require("./routes/courseRoutes");
 const courseAssignmentRoutes = require("./routes/courseAssignmentRoutes");
 const lecturerRoutes = require("./routes/lecturerRoutes");
+const resultRoutes = require("./routes/resultRoutes");
 
 
 
@@ -34,6 +35,7 @@ app.use(
     courseAssignmentRoutes
 );
 app.use("/api/lecturers", lecturerRoutes);
+app.use("/api/results", resultRoutes);
 
 
 app.get('/', (req, res) => {
