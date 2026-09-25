@@ -5,6 +5,11 @@ const {
   submitResult,
   approveResult,
   rejectResult,
+  resubmitResult,
+   getResultStatistics,
+    getApprovedResults,
+      getRejectedResults,
+       updateRejectedResult,
 } = require("../controllers/resultController");
 
 const {
@@ -33,9 +38,10 @@ router.patch(
 router.patch(
   "/:id/approve",
   protect,
-  authorize("hod", "admin"),
+  authorize("hod"),
   approveResult
 );
+
 
 // HOD/Admin rejection
 router.patch(
@@ -44,5 +50,41 @@ router.patch(
   authorize("hod", "admin"),
   rejectResult
 );
+
+router.get(
+  "/statistics",
+  protect,
+  authorize("admin", "hod"),
+  getResultStatistics
+);
+
+router.get(
+  "/approved",
+  protect,
+  authorize("admin", "hod"),
+  getApprovedResults
+);
+
+router.get(
+  "/rejected",
+  protect,
+  authorize("admin", "hod"),
+  getRejectedResults
+);
+
+router.patch(
+  "/:id/resubmit",
+  protect,
+  authorize("lecturer"),
+  resubmitResult
+);
+
+router.patch(
+  "/:id/edit-rejected",
+  protect,
+  authorize("lecturer"),
+  updateRejectedResult
+);
+
 
 module.exports = router;
