@@ -10,6 +10,7 @@ const institutionRoutes = require("./routes/institutionRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const authRoutes = require("./routes/authRoutes");
+const verificationRoutes = require("./routes/verificationRoutes");
 const courseRoutes = require("./routes/courseRoutes");
 const courseAssignmentRoutes = require("./routes/courseAssignmentRoutes");
 const lecturerRoutes = require("./routes/lecturerRoutes");
@@ -29,13 +30,12 @@ app.use("/api/institutions", institutionRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/verification", verificationRoutes);
 app.use("/api/courses", courseRoutes);
-app.use(
-    "/api/course-assignments",
-    courseAssignmentRoutes
-);
+app.use("/api/course-assignments", courseAssignmentRoutes);
 app.use("/api/lecturers", lecturerRoutes);
 app.use("/api/results", resultRoutes);
+
 
 
 app.get('/', (req, res) => {

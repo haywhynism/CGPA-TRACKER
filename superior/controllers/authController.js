@@ -691,13 +691,13 @@ const activateLecturerAccount = async (req, res) => {
 
         // Create User account
         const user = await User.create({
-            name: lecturer.name,
+            name: lecturer.name.trim(),
             staffId: normalizedStaffId,
             email: lecturer.email.toLowerCase().trim(),
             password: hashedPassword,
             role: lecturer.role,
             department: lecturer.department,
-            isActive: true,
+            isActive: false,
         });
 
         // Activate lecturer record

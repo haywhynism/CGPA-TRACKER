@@ -27,7 +27,9 @@ const userSchema = new mongoose.Schema(
         email: {
             type: String,
             required: function () {
-                return ["student", "lecturer", "hod"].includes(this.role);
+                return ["student", "lecturer", "hod"].includes(
+                    this.role
+                );
             },
             unique: true,
             sparse: true,
@@ -44,11 +46,15 @@ const userSchema = new mongoose.Schema(
         role: {
             type: String,
             required: true,
-            enum: ["admin", "hod", "lecturer", "student"],
+            enum: [
+                "admin",
+                "hod",
+                "lecturer",
+                "student",
+            ],
             default: "student",
         },
 
-        
         student: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Student",
@@ -61,9 +67,10 @@ const userSchema = new mongoose.Schema(
             default: null,
         },
 
+        // Controls dashboard/login access
         isActive: {
             type: Boolean,
-            default: true,
+            default: false,
         },
     },
     {
@@ -71,4 +78,7 @@ const userSchema = new mongoose.Schema(
     }
 );
 
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model(
+    "User",
+    userSchema
+);
