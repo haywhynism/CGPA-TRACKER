@@ -5,8 +5,12 @@ const {
   getVerificationStatus,
   veriffWebhook,
   getPendingVerifications,
+    getVerificationDetails,
   approveVerification,
   rejectVerification,
+    getApprovedStaff,
+  getRejectedStaff,
+   getVerificationStats,
 } = require("../controllers/verificationController");
 
 // const { protect } = require("../middleware/authMiddleware");
@@ -14,22 +18,22 @@ const {
 const router = express.Router();
 
 const {
-  protect,
-  authorize,
+    protect,
+    protectVerification,
+    authorize,
 } = require("../middleware/authMiddleware");
 
 
 router.post(
-  "/start",
-  protect,
-  authorize("lecturer", "hod"),
-  startVerification
+    "/start",
+    protectVerification,
+    startVerification
 );
 
 router.get(
-  "/status",
-  protect,
-  getVerificationStatus
+    "/status",
+    protectVerification,
+    getVerificationStatus
 );
 
 
@@ -68,6 +72,36 @@ router.patch(
   authorize("admin"),
   rejectVerification
 );
+
+
+router.get(
+  "/stats",
+  protect,
+  authorize("admin"),
+  getVerificationStats
+);
+
+router.get(
+  "/approved",
+  protect,
+  authorize("admin"),
+  getApprovedStaff
+);
+
+router.get(
+  "/rejected",
+  protect,
+  authorize("admin"),
+  getRejectedStaff
+);
+
+router.get(
+  "/:id",
+  protect,
+  authorize("admin"),
+  getVerificationDetails
+);
+
 
 
 module.exports = router;

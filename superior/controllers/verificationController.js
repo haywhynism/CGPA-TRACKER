@@ -47,13 +47,18 @@ const startVerification = async (req, res) => {
 
         if (
             lecturer.verificationStatus === "processing"
+            
         ) {
             return res.status(200).json({
                 message: "A verification is already in progress",
                 verification: {
                     id: lecturer.verificationId,
                     url: lecturer.verificationUrl,
+                    
+                    
                 },
+                
+                
             });
         }
 
@@ -70,39 +75,14 @@ const startVerification = async (req, res) => {
 
 
         const verificationReference = crypto.randomUUID();
-        console.log("Veriff API key exists:", !!process.env.VERIFF_API_KEY);
-        console.log(
-            "Veriff API key length:",
-            process.env.VERIFF_API_KEY?.length
-        );
-        console.log(
-            "Veriff API key format:",
-            process.env.VERIFF_API_KEY
-                ? "value loaded"
-                : "MISSING"
-        );
-
-        const apiKey = process.env.VERIFF_API_KEY;
-
-        console.log("API key length:", apiKey?.length);
-        console.log(
-            "API key UUID format:",
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(apiKey || "")
-        );
+       
         const response = await axios.post(
             `${VERIFF_BASE_URL}/v1/sessions`,
             {
                 verification: {
                     callback: `${process.env.APP_URL}/api/verification/webhook`,
-
-                    person: {
-                        firstName: lecturer.name.trim(),
-                    },
-
                     vendorData: lecturer._id.toString(),
-
                     timestamp: new Date().toISOString(),
-
                     endUserId: verificationReference,
                 },
             },
@@ -128,6 +108,10 @@ const startVerification = async (req, res) => {
 
         lecturer.verificationRejectedReason =
             null;
+
+            lecturer.verifiedBy = null,
+            lecturer.verifiedAt = null,
+            
 
         await lecturer.save();
 
@@ -218,72 +202,95 @@ const getVerificationStatus = async (req, res) => {
 
 
 
-
-
 const veriffWebhook = async (req, res) => {
-    
     try {
-        const signature =
-            req.headers["x-hmac-signature"];
+        const signature = req.headers["x-hmac-signature"];
+        const authClient = req.headers["x-auth-client"];
 
-               console.log("VERIFF WEBHOOK HEADERS:");
-        console.log(req.headers);
+        // 1. Required Veriff headers
+        if (!signature || !authClient) {
+            console.error("Veriff webhook: missing authentication headers");
 
-        console.log("VERIFF WEBHOOK BODY:");
-        console.log(req.body);
-
-        if (!signature) {
             return res.status(401).json({
-                message: "Missing webhook signature",
+                message: "Missing webhook authentication headers",
             });
         }
 
-        const rawBody =
-            JSON.stringify(req.body);
+        // 2. Make sure webhook belongs to our Veriff integration
+        if (authClient !== process.env.VERIFF_API_KEY) {
+            console.error("Veriff webhook: invalid auth client");
 
-        const expectedSignature =
-            crypto
-                .createHmac(
-                    "sha256",
-                    process.env.VERIFF_SHARED_SECRET
-                )
-                .update(rawBody)
-                .digest("hex");
+            return res.status(401).json({
+                message: "Invalid webhook client",
+            });
+        }
+
+        // 3. Our webhook route must receive the untouched raw body
+        if (!Buffer.isBuffer(req.body)) {
+            console.error("Veriff webhook: body is not a raw Buffer");
+
+            return res.status(400).json({
+                message: "Invalid webhook body",
+            });
+        }
+
+        const rawBody = req.body;
+
+        // 4. Calculate signature using the EXACT raw body
+        const expectedSignature = crypto
+            .createHmac("sha256", process.env.VERIFF_SHARED_SECRET)
+            .update(rawBody)
+            .digest("hex");
+
+        // 5. Compare signatures safely
+        const receivedSignature = Buffer.from(signature, "hex");
+        const calculatedSignature = Buffer.from(expectedSignature, "hex");
 
         if (
-            signature !== expectedSignature
+            receivedSignature.length !== calculatedSignature.length ||
+            !crypto.timingSafeEqual(receivedSignature, calculatedSignature)
         ) {
+            console.error("Veriff webhook: invalid HMAC signature");
+
             return res.status(401).json({
                 message: "Invalid webhook signature",
             });
         }
 
-        const verification =
-            req.body.verification;
+        // 6. Only parse JSON AFTER signature verification
+        let body;
 
-        if (!verification) {
+        try {
+            body = JSON.parse(rawBody.toString("utf8"));
+        } catch (error) {
+            console.error("Veriff webhook: invalid JSON");
+
             return res.status(400).json({
-                message:
-                    "Invalid verification webhook",
+                message: "Invalid webhook JSON",
             });
         }
 
-        const verificationId =
-            verification.id;
+        const verification = body.verification;
 
-        const status =
-            verification.status;
-
-        const code =
-            verification.code;
-
-        const reason =
-            verification.reason || null;
-
-        const lecturer =
-            await Lecturer.findOne({
-                verificationId,
+        if (!verification?.id) {
+            return res.status(400).json({
+                message: "Invalid verification webhook",
             });
+        }
+
+        const verificationId = verification.id;
+        const status = verification.status;
+        const code = verification.code;
+        const reason = verification.reason || null;
+
+        console.log(
+            `Veriff decision received: ${verificationId} - ${status} (${code})`
+        );
+
+        // 7. Find the lecturer/HOD belonging to this Veriff session
+        const lecturer = await Lecturer.findOne({
+            verificationId,
+        });
 
         if (!lecturer) {
             console.error(
@@ -292,49 +299,45 @@ const veriffWebhook = async (req, res) => {
             );
 
             return res.status(404).json({
-                message:
-                    "Verification record not found",
+                message: "Verification record not found",
             });
         }
 
+        // Store Veriff result
         lecturer.verificationResult =
-            code || status || null;
+            code !== undefined && code !== null
+                ? String(code)
+                : status || null;
 
-
-        if (
-            status === "approved" ||
-            code === "approved"
-        ) {
-            lecturer.verificationStatus =
-                "review";
+        // 8. Approved by Veriff -> wait for institutional/admin approval
+        if (status === "approved" || code === 9001) {
+            lecturer.verificationStatus = "review";
+            lecturer.verificationRejectedReason = null;
         }
 
-        else if (
-            status === "declined" ||
-            code === "declined"
-        ) {
-            lecturer.verificationStatus =
-                "rejected";
-
+        // Veriff declined the verification
+        else if (status === "declined") {
+            lecturer.verificationStatus = "rejected";
             lecturer.verificationRejectedReason =
-                reason;
+                reason || "Identity verification was declined";
         }
 
+        // Other Veriff states remain in processing
         else {
-            lecturer.verificationStatus =
-                "processing";
+            lecturer.verificationStatus = "processing";
         }
 
         await lecturer.save();
+
+        console.log(
+            `Lecturer verification status updated to: ${lecturer.verificationStatus}`
+        );
 
         return res.status(200).json({
             message: "Webhook received",
         });
     } catch (error) {
-        console.error(
-            "Veriff webhook error:",
-            error
-        );
+        console.error("Veriff webhook error:", error);
 
         return res.status(500).json({
             message: "Webhook processing failed",
@@ -342,12 +345,164 @@ const veriffWebhook = async (req, res) => {
     }
 };
 
+
+const getVerificationDetails = async (req, res) => {
+    try {
+        const lecturer = await Lecturer.findById(req.params.id)
+            .select("-verificationUrl -activationCode -activationCodeExpires")
+            .populate("user", "name email staffId role isActive")
+            .populate("department", "name")
+            .populate("institution", "name")
+            .populate("verifiedBy", "name email");
+
+        if (!lecturer) {
+            return res.status(404).json({
+                message: "Lecturer not found",
+            });
+        }
+
+        return res.status(200).json({
+            lecturer,
+        });
+    } catch (error) {
+        console.error("Get verification details error:", error);
+
+        return res.status(500).json({
+            message: "Unable to get verification details",
+        });
+    }
+};
+
+// const veriffWebhook = async (req, res) => {
+
+//     try {
+//         const signature =
+//             req.headers["x-hmac-signature"];
+
+
+//         if (!signature) {
+//             return res.status(401).json({
+//                 message: "Missing webhook signature",
+
+//             });
+
+
+//         }
+
+//         const rawBody = req.body;
+
+//         const expectedSignature =
+//             crypto
+//                 .createHmac(
+//                     "sha256",
+//                     process.env.VERIFF_SHARED_SECRET
+//                 )
+//                 .update(rawBody)
+//                 .digest("hex");
+
+//         if (
+//             signature !== expectedSignature
+//         ) {
+//             return res.status(401).json({
+//                 message: "Invalid webhook signature",
+//             });
+//         }
+
+//         const body = JSON.parse(
+//             rawBody.toString("utf8")
+//         );
+
+//         const verification =
+//             req.body.verification;
+
+//         if (!verification) {
+//             return res.status(400).json({
+//                 message:
+//                     "Invalid verification webhook",
+//             });
+//         }
+
+//         const verificationId =
+//             verification.id;
+
+//         const status =
+//             verification.status;
+
+//         const code =
+//             verification.code;
+
+//         const reason =
+//             verification.reason || null;
+
+//         const lecturer =
+//             await Lecturer.findOne({
+//                 verificationId,
+//             });
+
+//         if (!lecturer) {
+//             console.error(
+//                 "No lecturer found for Veriff verification:",
+//                 verificationId
+//             );
+
+//             return res.status(404).json({
+//                 message:
+//                     "Verification record not found",
+//             });
+//         }
+
+//         lecturer.verificationResult =
+//             code || status || null;
+
+
+//         if (
+//             status === "approved" ||
+//             code === "approved"
+//         ) {
+//             lecturer.verificationStatus =
+//                 "review";
+//         }
+
+//         else if (
+//             status === "declined" ||
+//             code === "declined"
+//         ) {
+//             lecturer.verificationStatus =
+//                 "rejected";
+
+//             lecturer.verificationRejectedReason =
+//                 reason;
+//         }
+
+//         else {
+//             lecturer.verificationStatus =
+//                 "processing";
+//         }
+
+//         await lecturer.save();
+
+//         return res.status(200).json({
+//             message: "Webhook received",
+//         });
+//     } catch (error) {
+//         console.error(
+//             "Veriff webhook error:",
+//             error
+//         );
+
+//         return res.status(500).json({
+//             message: "Webhook processing failed",
+//         });
+//     }
+// };
+
 // Get staff verification records waiting for admin review
 const getPendingVerifications = async (req, res) => {
     try {
         const lecturers = await Lecturer.find({
             verificationStatus: "review",
         })
+            .select("-verificationUrl -activationCode -activationCodeExpires")
             .populate("user", "name email role staffId isActive")
             .populate("department", "name code faculty")
             .populate("institution", "name code type")
@@ -520,11 +675,128 @@ const rejectVerification = async (req, res) => {
 };
 
 
+const getVerificationStats = async (req, res) => {
+    try {
+        const [
+            verified,
+            rejected,
+            review,
+            processing,
+            notStarted,
+            total,
+        ] = await Promise.all([
+            Lecturer.countDocuments({
+                verificationStatus: "verified",
+            }),
+
+            Lecturer.countDocuments({
+                verificationStatus: "rejected",
+            }),
+
+            Lecturer.countDocuments({
+                verificationStatus: "review",
+            }),
+
+            Lecturer.countDocuments({
+                verificationStatus: "processing",
+            }),
+
+            // Includes new records AND legacy records
+            // created before verificationStatus existed.
+            Lecturer.countDocuments({
+                $or: [
+                    { verificationStatus: "not_started" },
+                    { verificationStatus: { $exists: false } },
+                    { verificationStatus: null },
+                ],
+            }),
+
+            Lecturer.countDocuments(),
+        ]);
+
+        return res.status(200).json({
+            total,
+            verified,
+            rejected,
+            review,
+            processing,
+            notStarted,
+        });
+    } catch (error) {
+        console.error(
+            "Get verification stats error:",
+            error
+        );
+
+        return res.status(500).json({
+            message:
+                "Unable to get verification statistics",
+        });
+    }
+};
+
+const getApprovedStaff = async (req, res) => {
+    try {
+        const lecturers = await Lecturer.find({
+            verificationStatus: "verified",
+        })
+            .select("-verificationUrl -activationCode -activationCodeExpires")
+            .populate("user", "name email staffId role isActive")
+            .populate("department", "name")
+            .populate("institution", "name")
+            .populate("verifiedBy", "name email")
+            .sort({ verifiedAt: -1 });
+
+        return res.status(200).json({
+            count: lecturers.length,
+            lecturers,
+        });
+    } catch (error) {
+        console.error("Get approved staff error:", error);
+
+        return res.status(500).json({
+            message: "Unable to get approved staff",
+        });
+    }
+};
+
+const getRejectedStaff = async (req, res) => {
+    try {
+        const lecturers = await Lecturer.find({
+            verificationStatus: "rejected",
+        })
+            .select("-verificationUrl -activationCode -activationCodeExpires")
+            .populate("user", "name email staffId role isActive")
+            .populate("department", "name")
+            .populate("institution", "name")
+            .populate("verifiedBy", "name email")
+            .sort({ verifiedAt: -1 });
+
+        return res.status(200).json({
+            count: lecturers.length,
+            lecturers,
+        });
+    } catch (error) {
+        console.error("Get rejected staff error:", error);
+
+        return res.status(500).json({
+            message: "Unable to get rejected staff",
+        });
+    }
+};
+
 module.exports = {
     startVerification,
     getVerificationStatus,
     veriffWebhook,
     getPendingVerifications,
+    getVerificationDetails,
+    getVerificationStats,
+    getApprovedStaff,
+    getApprovedStaff,
+    getRejectedStaff,
     approveVerification,
     rejectVerification,
+
+
 };

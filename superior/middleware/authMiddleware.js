@@ -78,8 +78,71 @@ const authorize = (...roles) => {
     };
 };
 
+// Verify JWT token for staff identity verification
+// Allows activated lecturer/HOD accounts even if they are not active yet
+const protectVerification = async (req, res, next) => {
+    try {
+        let token;
+
+        if (
+            req.headers.authorization &&
+            req.headers.authorization.startsWith("Bearer ")
+        ) {
+            token = req.headers.authorization.split(" ")[1];
+        }
+
+        if (!token) {
+            return res.status(401).json({
+                message: "Not authorized. Please log in.",
+            });
+        }
+
+        const decoded = jwt.verify(
+            token,
+            process.env.JWT_SECRET
+        );
+
+        const user = await User.findById(
+            decoded.userId
+        ).select("-password");
+
+        if (!user) {
+            return res.status(401).json({
+                message: "User account no longer exists.",
+            });
+        }
+
+        // Only lecturer/HOD accounts may use this middleware
+        if (!["lecturer", "hod"].includes(user.role)) {
+            return res.status(403).json({
+                message:
+                    "Only lecturers and HODs can access staff verification.",
+            });
+        }
+
+        // IMPORTANT:
+        // Do NOT check user.isActive here.
+        // Staff must complete verification before becoming active.
+
+        req.user = user;
+
+        next();
+    } catch (error) {
+        console.error(
+            "Verification authentication error:",
+            error.message
+        );
+
+        return res.status(401).json({
+            message:
+                "Invalid or expired authentication token.",
+        });
+    }
+};
+
 
 module.exports = {
     protect,
+    protectVerification,
     authorize,
 };

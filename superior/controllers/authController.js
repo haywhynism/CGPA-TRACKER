@@ -271,7 +271,7 @@ const login = async (req, res) => {
                 return res.status(403).json({
                     message: "Your account is inactive",
                 });
-            }
+            };
 
             const token = jwt.sign(
                 {
@@ -327,12 +327,8 @@ const login = async (req, res) => {
                 });
             }
 
-            if (!user.isActive) {
-                return res.status(403).json({
-                    message: "Your account is inactive",
-                });
-            }
-
+            // Generate token even if staff verification
+            // has not been completed yet.
             const token = jwt.sign(
                 {
                     userId: user._id,
@@ -345,9 +341,31 @@ const login = async (req, res) => {
                 }
             );
 
+            // Staff has activated their account,
+            // but final verification/admin approval is pending.
+            if (!user.isActive) {
+                return res.status(200).json({
+                    message:
+                        "Login successful. Staff verification is required before dashboard access.",
+                    token,
+                    requiresVerification: true,
+                    user: {
+                        id: user._id,
+                        name: user.name,
+                        staffId: user.staffId,
+                        email: user.email,
+                        role: user.role,
+                        department: user.department,
+                        isActive: false,
+                    },
+                });
+            }
+
+            // Fully approved staff
             return res.status(200).json({
                 message: "Login successful",
                 token,
+                requiresVerification: false,
                 user: {
                     id: user._id,
                     name: user.name,
@@ -355,6 +373,7 @@ const login = async (req, res) => {
                     email: user.email,
                     role: user.role,
                     department: user.department,
+                    isActive: true,
                 },
             });
         }
